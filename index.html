@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>JSON Unifier → Excel</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --bg:#0d0f14;--surface:#161920;--surf2:#1e222d;--border:#2a2f3d;
+    --accent:#4f8ef7;--accent2:#7c5cfc;--green:#3ecf8e;--yellow:#f7b74f;--red:#f7534f;
+    --text:#e8eaf0;--muted:#6b7490;
+    --mono:'JetBrains Mono','Fira Mono',monospace;--sans:'Inter',system-ui,sans-serif;
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  html{font-size:15px}
+  body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:100vh;line-height:1.6}
+  .app{max-width:1140px;margin:0 auto;padding:2rem 1.5rem 4rem}
+
+  header{display:flex;align-items:center;gap:1rem;margin-bottom:2.5rem;padding-bottom:1.5rem;border-bottom:1px solid var(--border)}
+  .logo{width:44px;height:44px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.3rem;flex-shrink:0}
+  header h1{font-size:1.35rem;font-weight:700;letter-spacing:-.01em}
+  header p{font-size:.8rem;color:var(--muted);margin-top:.1rem}
+  .badge{margin-left:auto;font-family:var(--mono);font-size:.7rem;color:var(--accent);background:rgba(79,142,247,.1);border:1px solid rgba(79,142,247,.25);padding:.25rem .6rem;border-radius:20px}
+
+  .slabel{font-size:.7rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:.75rem;display:flex;align-items:center;gap:.5rem}
+  .slabel::after{content:'';flex:1;height:1px;background:var(--border)}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.5rem;margin-bottom:1.5rem}
+
+  /* DROP ZONE */
+  #drop-zone{border:2px dashed var(--border);border-radius:10px;padding:3rem 2rem;text-align:center;cursor:pointer;transition:all .2s}
+  #drop-zone:hover,#drop-zone.dragging{border-color:var(--accent);background:rgba(79,142,247,.04)}
+  #drop-zone .icon{font-size:2.5rem;margin-bottom:.75rem}
+  #drop-zone h3{font-size:1rem;font-weight:600;margin-bottom:.3rem}
+  #drop-zone p{font-size:.82rem;color:var(--muted)}
+  #file-input{display:none}
+  .btn-link{color:var(--accent);cursor:pointer;text-decoration:underline;background:none;border:none;font:inherit;font-size:.82rem}
+
+  #file-list{display:flex;flex-direction:column;gap:.5rem;margin-top:1rem}
+  .fi{display:flex;align-items:center;gap:.75rem;background:var(--surf2);border:1px solid var(--border);border-radius:8px;padding:.6rem 1rem;font-size:.82rem;animation:slideIn .15s ease}
+  @keyframes slideIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+  .fi-icon{font-size:1.1rem;flex-shrink:0}
+  .fi-name{flex:1;font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .fi-size{color:var(--muted);flex-shrink:0}
+  .fi-badge{flex-shrink:0;font-size:.72rem;padding:.15rem .5rem;border-radius:20px}
+  .fi-badge.ok{background:rgba(62,207,142,.12);color:var(--green);border:1px solid rgba(62,207,142,.25)}
+  .fi-badge.error{background:rgba(247,83,79,.12);color:var(--red);border:1px solid rgba(247,83,79,.25)}
+  .fi-badge.wait{background:rgba(107,116,144,.12);color:var(--muted);border:1px solid var(--border)}
+  .fi-rm{background:none;border:none;cursor:pointer;color:var(--muted);font-size:1rem;padding:0 .2rem;transition:color .15s}
+  .fi-rm:hover{color:var(--red)}
+  .fi-err{font-size:.72rem;color:var(--red);margin:.25rem 0 0 1.85rem}
+
+  /* MODO */
+  .mode-selector{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem}
+  .mode-btn{flex:1;min-width:220px;padding:.85rem 1rem;border-radius:10px;border:2px solid var(--border);background:var(--surf2);cursor:pointer;text-align:left;transition:all .18s;color:var(--text)}
+  .mode-btn:hover{border-color:var(--accent)}
+  .mode-btn.active{border-color:var(--accent);background:rgba(79,142,247,.07)}
+  .mode-btn .mb-icon{font-size:1.4rem;margin-bottom:.4rem}
+  .mode-btn .mb-title{font-size:.88rem;font-weight:700;margin-bottom:.2rem}
+  .mode-btn .mb-desc{font-size:.75rem;color:var(--muted);line-height:1.4}
+
+  /* CONFIG CLAVE */
+  .cfg-row{display:flex;flex-wrap:wrap;align-items:center;gap:.75rem;margin-top:.75rem;padding:.85rem 1rem;background:var(--surf2);border:1px solid var(--border);border-radius:8px}
+  .cfg-row label{font-size:.82rem;color:var(--muted);flex-shrink:0}
+  .text-input{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:.45rem .8rem;color:var(--text);font:inherit;font-size:.82rem;outline:none;transition:border-color .15s;width:180px}
+  .text-input:focus{border-color:var(--accent)}
+  .text-input::placeholder{color:var(--muted)}
+  .cfg-hint{font-size:.75rem;color:var(--muted)}
+
+  /* INFO BOX */
+  .info-box{background:rgba(79,142,247,.06);border:1px solid rgba(79,142,247,.2);border-radius:8px;padding:.75rem 1rem;font-size:.8rem;color:var(--accent);margin-top:.75rem;line-height:1.5}
+  .info-box strong{font-weight:700}
+
+  .opts{display:flex;flex-wrap:wrap;gap:1rem;align-items:center}
+  .tog{display:flex;align-items:center;gap:.5rem;font-size:.82rem;cursor:pointer;user-select:none}
+  .tog input{accent-color:var(--accent);width:15px;height:15px;cursor:pointer}
+
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem}
+  .sc{background:var(--surf2);border:1px solid var(--border);border-radius:10px;padding:1rem 1.25rem}
+  .sc-l{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+  .sc-v{font-size:1.75rem;font-weight:700;font-family:var(--mono);margin-top:.15rem}
+  .sc-v.a{color:var(--accent)}.sc-v.g{color:var(--green)}.sc-v.y{color:var(--yellow)}
+
+  .prog{margin-top:1rem}
+  .prog-bg{height:6px;background:var(--surf2);border-radius:99px;overflow:hidden}
+  .prog-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:99px;transition:width .2s;width:0%}
+  .prog-txt{font-size:.78rem;color:var(--muted);margin-top:.4rem}
+
+  .btn{display:inline-flex;align-items:center;gap:.5rem;padding:.65rem 1.4rem;border-radius:8px;border:none;font-family:var(--sans);font-size:.85rem;font-weight:600;cursor:pointer;transition:all .15s;white-space:nowrap}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .btn-primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff}
+  .btn-primary:not(:disabled):hover{filter:brightness(1.1)}
+  .btn-success{background:var(--green);color:#0d1a12}
+  .btn-success:not(:disabled):hover{filter:brightness(1.08)}
+  .btn-ghost{background:var(--surf2);color:var(--text);border:1px solid var(--border)}
+  .btn-ghost:not(:disabled):hover{border-color:var(--accent);color:var(--accent)}
+  .act-row{display:flex;flex-wrap:wrap;gap:.75rem;align-items:center;margin-top:1rem}
+
+  .alert{border-radius:8px;padding:.75rem 1rem;font-size:.82rem;margin-top:.75rem;display:flex;gap:.5rem}
+  .aw{background:rgba(247,183,79,.08);border:1px solid rgba(247,183,79,.3);color:var(--yellow)}
+  .ae{background:rgba(247,83,79,.08);border:1px solid rgba(247,83,79,.3);color:var(--red)}
+  .ag{background:rgba(62,207,142,.08);border:1px solid rgba(62,207,142,.3);color:var(--green)}
+
+  .search-row{display:flex;align-items:center;gap:.75rem;margin-bottom:1rem}
+  .search-input{flex:1;background:var(--surf2);border:1px solid var(--border);border-radius:8px;padding:.55rem .9rem;color:var(--text);font:inherit;font-size:.85rem;outline:none;transition:border-color .15s}
+  .search-input::placeholder{color:var(--muted)}
+  .search-input:focus{border-color:var(--accent)}
+
+  #sheet-tabs{display:flex;gap:.35rem;flex-wrap:wrap;margin-bottom:1rem}
+  .stab{padding:.35rem .85rem;border-radius:6px;border:1px solid var(--border);background:var(--surf2);font-size:.78rem;cursor:pointer;color:var(--muted);transition:all .15s;font-family:var(--mono)}
+  .stab:hover{border-color:var(--accent);color:var(--text)}
+  .stab.active{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+
+  .tbl-wrap{overflow:auto;border-radius:10px;border:1px solid var(--border);max-height:440px}
+  table{width:100%;border-collapse:collapse;font-size:.76rem;font-family:var(--mono)}
+  thead th{background:var(--surf2);padding:.55rem .85rem;text-align:left;font-weight:700;color:var(--muted);font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;position:sticky;top:0;z-index:1;border-bottom:1px solid var(--border);white-space:nowrap}
+  thead th.key-col{color:var(--accent)}
+  tbody tr{border-bottom:1px solid var(--border);transition:background .1s}
+  tbody tr:last-child{border-bottom:none}
+  tbody tr:hover{background:var(--surf2)}
+  tbody td{padding:.45rem .85rem;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  tbody td.key-cell{color:var(--accent);font-weight:600}
+  .null-v{color:var(--muted);font-style:italic}
+  .rn{color:var(--muted);font-size:.66rem;user-select:none}
+  .no-data{text-align:center;padding:3rem 2rem;color:var(--muted);font-size:.85rem}
+
+  .sheet-pills{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.75rem}
+  .pill{font-size:.75rem;font-family:var(--mono);background:rgba(79,142,247,.1);border:1px solid rgba(79,142,247,.25);color:var(--accent);padding:.2rem .65rem;border-radius:20px}
+  .pill.g{background:rgba(62,207,142,.1);border-color:rgba(62,207,142,.25);color:var(--green)}
+
+  .hidden{display:none!important}
+  @media(max-width:640px){.stats{grid-template-columns:1fr 1fr}.act-row{flex-direction:column;align-items:stretch}.btn{justify-content:center}}
+</style>
+</head>
+<body>
+<div class="app">
+
+<header>
+  <div class="logo">🔗</div>
+  <div>
+    <h1>JSON Unifier → Excel</h1>
+    <p>Unifica múltiples archivos JSON y exporta a .xlsx con múltiples hojas</p>
+  </div>
+  <span class="badge">v3.0 · Local</span>
+</header>
+
+<!-- 1. CARGA -->
+<div class="slabel">1 · Carga de archivos</div>
+<div class="card">
+  <div id="drop-zone">
+    <div class="icon">📂</div>
+    <h3>Arrastra aquí tus archivos JSON</h3>
+    <p>o <button class="btn-link" onclick="document.getElementById('file-input').click()">selecciona archivos manualmente</button></p>
+    <p style="margin-top:.4rem;font-size:.75rem">Soporta múltiples archivos .json simultáneamente</p>
+  </div>
+  <input type="file" id="file-input" multiple accept=".json,application/json" />
+  <div id="file-list"></div>
+  <div id="file-alert"></div>
+</div>
+
+<!-- 2. MODO -->
+<div class="slabel">2 · Modo de exportación</div>
+<div class="card">
+  <div class="mode-selector">
+    <button class="mode-btn active" id="mode-sheets" onclick="setMode('sheets')">
+      <div class="mb-icon">📑</div>
+      <div class="mb-title">Múltiples hojas</div>
+      <div class="mb-desc">Una hoja por sección (Equipos, GPU, Red, Discos…). ComputerName se propaga automáticamente a cada fila.</div>
+    </button>
+    <button class="mode-btn" id="mode-single" onclick="setMode('single')">
+      <div class="mb-icon">📄</div>
+      <div class="mb-title">Una sola hoja</div>
+      <div class="mb-desc">Todos los registros en una hoja plana. Útil para listas simples y homogéneas.</div>
+    </button>
+  </div>
+
+  <div id="cfg-sheets">
+    <div class="cfg-row">
+      <label>Campo clave del equipo (se propaga a sub-secciones):</label>
+      <input class="text-input" id="key-field" type="text" value="ComputerName" placeholder="ej: ComputerName, id, hostname" />
+      <span class="cfg-hint">Dejar vacío = auto-detectar</span>
+    </div>
+    <div class="info-box">
+      💡 <strong>¿Cómo funciona?</strong> Si tu JSON tiene la forma
+      <code style="background:rgba(255,255,255,.07);padding:.1rem .35rem;border-radius:4px">{"ComputerName":"PC-01", "Disks":[...], "GPU":[...]}</code>
+      — la app crea una hoja por sección e inyecta <code style="background:rgba(255,255,255,.07);padding:.1rem .35rem;border-radius:4px">ComputerName</code> en cada fila, igual al archivo de referencia.
+    </div>
+  </div>
+</div>
+
+<!-- 3. OPCIONES -->
+<div class="slabel">3 · Opciones</div>
+<div class="card">
+  <div class="opts">
+    <label class="tog"><input type="checkbox" id="opt-dedup" checked />Eliminar duplicados</label>
+    <label class="tog"><input type="checkbox" id="opt-flatten" checked />Aplanar estructuras anidadas (notación punto)</label>
+    <label class="tog"><input type="checkbox" id="opt-source" />Agregar columna "_archivo_fuente"</label>
+  </div>
+  <div class="act-row">
+    <button class="btn btn-primary" id="btn-process" disabled onclick="procesarArchivos()">⚙️ Procesar y unificar</button>
+    <button class="btn btn-ghost" onclick="limpiarTodo()">🗑 Limpiar todo</button>
+  </div>
+  <div id="prog-wrap" class="prog hidden">
+    <div class="prog-bg"><div class="prog-fill" id="prog-bar"></div></div>
+    <div class="prog-txt" id="prog-txt">Procesando...</div>
+  </div>
+</div>
+
+<!-- 4. ESTADÍSTICAS -->
+<div class="slabel">4 · Estadísticas</div>
+<div class="stats" style="margin-bottom:1.5rem">
+  <div class="sc"><div class="sc-l">Archivos cargados</div><div class="sc-v a" id="st-files">0</div></div>
+  <div class="sc"><div class="sc-l">Registros encontrados</div><div class="sc-v" id="st-records">0</div></div>
+  <div class="sc"><div class="sc-l">Duplicados eliminados</div><div class="sc-v y" id="st-dupes">0</div></div>
+  <div class="sc"><div class="sc-l">Registros exportables</div><div class="sc-v g" id="st-export">0</div></div>
+  <div class="sc"><div class="sc-l">Hojas detectadas</div><div class="sc-v a" id="st-sheets">0</div></div>
+  <div class="sc"><div class="sc-l">Tiempo procesamiento</div><div class="sc-v" id="st-time">—</div></div>
+</div>
+
+<!-- 5. VISTA PREVIA -->
+<div id="preview-section" class="hidden">
+  <div class="slabel">5 · Vista previa</div>
+  <div class="card" style="padding:1rem 1.25rem">
+    <div id="sheet-tabs"></div>
+    <div class="search-row">
+      <input class="search-input" id="search-input" type="text" placeholder="🔍  Buscar en cualquier columna..." oninput="filtrarTabla()" />
+      <span style="font-size:.78rem;color:var(--muted);white-space:nowrap" id="col-label">0 columnas</span>
+    </div>
+    <div class="tbl-wrap">
+      <table><thead id="tbl-head"></thead><tbody id="tbl-body"></tbody></table>
+    </div>
+    <div style="font-size:.75rem;color:var(--muted);margin-top:.6rem" id="prev-footer"></div>
+  </div>
+</div>
+
+<!-- 6. EXPORTACIÓN -->
+<div id="export-section" class="hidden">
+  <div class="slabel">6 · Exportar a Excel</div>
+  <div class="card">
+    <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:flex-end">
+      <div style="flex:1;min-width:200px">
+        <div style="font-size:.82rem;color:var(--muted);margin-bottom:.4rem">Nombre del archivo</div>
+        <div style="display:flex;align-items:center;gap:.35rem">
+          <input class="text-input" id="exp-name" type="text" value="inventario_unificado" style="width:100%;max-width:300px" />
+          <span style="font-size:.82rem;color:var(--muted)">.xlsx</span>
+        </div>
+      </div>
+      <button class="btn btn-success" onclick="exportarExcel()">📊 Descargar Excel</button>
+    </div>
+    <div id="sheet-summary" style="margin-top:1rem"></div>
+    <div id="exp-alert"></div>
+  </div>
+</div>
+
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════
+   ESTADO
+═══════════════════════════════════════════════════════ */
+const S = {
+  archivos:   [],
+  hojas:      {},   // { nombreHoja: [ fila, ... ] }
+  hojasOrder: [],
+  activeSheet:null,
+  modo:       'sheets',
+};
+
+/* ═══════════════════════════════════════════════════════
+   CARGA DE ARCHIVOS
+═══════════════════════════════════════════════════════ */
+const dropZone  = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+dropZone.addEventListener('dragover', e=>{e.preventDefault();dropZone.classList.add('dragging');});
+dropZone.addEventListener('dragleave', ()=>dropZone.classList.remove('dragging'));
+dropZone.addEventListener('drop', e=>{
+  e.preventDefault(); dropZone.classList.remove('dragging');
+  agregarArchivos([...e.dataTransfer.files]);
+});
+dropZone.addEventListener('click', e=>{ if(e.target.classList.contains('btn-link')) return; fileInput.click(); });
+fileInput.addEventListener('change', ()=>{ agregarArchivos([...fileInput.files]); fileInput.value=''; });
+
+function agregarArchivos(files) {
+  const jsons = files.filter(f=>f.name.endsWith('.json')||f.type==='application/json');
+  const ign   = files.length - jsons.length;
+  jsons.forEach(f=>{
+    if(!S.archivos.find(a=>a.name===f.name&&a.size===f.size))
+      S.archivos.push({file:f,name:f.name,size:f.size,status:'wait',error:null});
+  });
+  renderFiles();
+  setStat('st-files', S.archivos.length);
+  document.getElementById('btn-process').disabled = S.archivos.length===0;
+  if(ign>0) alerta('file-alert','aw',`⚠ ${ign} archivo(s) ignorado(s) — solo se aceptan .json`);
+  else document.getElementById('file-alert').innerHTML='';
+}
+
+function renderFiles() {
+  const el = document.getElementById('file-list');
+  if(!S.archivos.length){el.innerHTML='';return;}
+  el.innerHTML = S.archivos.map((a,i)=>`
+    <div>
+      <div class="fi">
+        <span class="fi-icon">${a.status==='ok'?'✅':a.status==='error'?'❌':'📄'}</span>
+        <span class="fi-name" title="${a.name}">${a.name}</span>
+        <span class="fi-size">${fmtBytes(a.size)}</span>
+        <span class="fi-badge ${a.status}">${a.status==='ok'?'válido':a.status==='error'?'error':'pendiente'}</span>
+        <button class="fi-rm" onclick="quitarArchivo(${i})">✕</button>
+      </div>
+      ${a.error?`<div class="fi-err">↳ ${a.error}</div>`:''}
+    </div>`).join('');
+}
+
+function quitarArchivo(i) {
+  S.archivos.splice(i,1); renderFiles();
+  setStat('st-files',S.archivos.length);
+  document.getElementById('btn-process').disabled=S.archivos.length===0;
+}
+
+/* ═══════════════════════════════════════════════════════
+   MODO
+═══════════════════════════════════════════════════════ */
+function setMode(m) {
+  S.modo=m;
+  document.getElementById('mode-sheets').classList.toggle('active',m==='sheets');
+  document.getElementById('mode-single').classList.toggle('active',m==='single');
+  document.getElementById('cfg-sheets').style.display = m==='sheets'?'block':'none';
+}
+
+/* ═══════════════════════════════════════════════════════
+   PROCESAMIENTO PRINCIPAL
+═══════════════════════════════════════════════════════ */
+async function procesarArchivos() {
+  const t0 = performance.now();
+  const optDedup   = document.getElementById('opt-dedup').checked;
+  const optFlatten = document.getElementById('opt-flatten').checked;
+  const optSource  = document.getElementById('opt-source').checked;
+  const keyField   = document.getElementById('key-field').value.trim() || '';
+
+  S.hojas={}; S.hojasOrder=[]; S.activeSheet=null;
+  document.getElementById('preview-section').classList.add('hidden');
+  document.getElementById('export-section').classList.add('hidden');
+  document.getElementById('file-alert').innerHTML='';
+
+  setProgress(0,'Leyendo archivos...');
+  document.getElementById('prog-wrap').classList.remove('hidden');
+  document.getElementById('btn-process').disabled=true;
+
+  let totalRaw=0, errCount=0;
+
+  for(let i=0;i<S.archivos.length;i++) {
+    const entrada = S.archivos[i];
+    setProgress(Math.round((i/S.archivos.length)*65), `Parseando: ${entrada.name}`);
+    try {
+      const texto = await leerArchivo(entrada.file);
+      const json  = JSON.parse(texto);
+
+      const secciones = S.modo==='sheets'
+        ? detectarSeccionesMultiHoja(json, keyField, entrada.name)
+        : { 'Datos': extraerRegistrosPlanos(json) };
+
+      for(const [hoja, filas] of Object.entries(secciones)) {
+        const procesadas = filas.map(r => {
+          const flat = optFlatten ? aplanar(r) : {...r};
+          if(optSource) flat['_archivo_fuente'] = entrada.name;
+          return flat;
+        });
+        if(!S.hojas[hoja]) S.hojas[hoja] = [];
+        S.hojas[hoja].push(...procesadas);
+        totalRaw += procesadas.length;
+      }
+      entrada.status='ok'; entrada.error=null;
+    } catch(err) {
+      entrada.status='error'; entrada.error=err.message; errCount++;
+    }
+  }
+
+  renderFiles();
+  setProgress(72,'Deduplicando...');
+
+  // Orden de hojas: la hoja "principal" (con más columnas o que contiene el keyField) va primero
+  S.hojasOrder = Object.keys(S.hojas);
+  S.hojasOrder.sort((a,b) => {
+    const priori = ['info','equipos','equipo','computer','main','general','datos'];
+    const ai = priori.findIndex(p=>a.toLowerCase().includes(p));
+    const bi = priori.findIndex(p=>b.toLowerCase().includes(p));
+    if(ai>=0&&bi<0) return -1; if(bi>=0&&ai<0) return 1;
+    return colsDeHoja(b).length - colsDeHoja(a).length; // más columnas = más importante
+  });
+
+  let dupesTotal=0;
+  if(optDedup) {
+    S.hojasOrder.forEach(h=>{
+      const seen=new Set(); const uniq=[];
+      S.hojas[h].forEach(r=>{
+        const key=JSON.stringify(colsDeHoja(h).map(c=>r[c]??null));
+        if(!seen.has(key)){seen.add(key);uniq.push(r);}else dupesTotal++;
+      });
+      S.hojas[h]=uniq;
+    });
+  }
+
+  setProgress(88,'Construyendo vista previa...');
+
+  const totalExport = S.hojasOrder.reduce((s,h)=>s+S.hojas[h].length,0);
+  setStat('st-records',totalRaw);
+  setStat('st-dupes',dupesTotal);
+  setStat('st-export',totalExport);
+  setStat('st-sheets',S.hojasOrder.length);
+  setStat('st-time',((performance.now()-t0)/1000).toFixed(2)+'s');
+
+  S.activeSheet = S.hojasOrder[0]||null;
+  renderSheetTabs();
+  renderTabla();
+  renderSheetSummary();
+  document.getElementById('preview-section').classList.remove('hidden');
+  document.getElementById('export-section').classList.remove('hidden');
+
+  setProgress(100,'¡Listo!');
+  setTimeout(()=>document.getElementById('prog-wrap').classList.add('hidden'),1200);
+  document.getElementById('btn-process').disabled=false;
+  if(errCount>0) alerta('file-alert','aw',`⚠ ${errCount} archivo(s) con error fueron omitidos.`);
+}
+
+/* ═══════════════════════════════════════════════════════
+   DETECCIÓN DE SECCIONES — lógica central
+═══════════════════════════════════════════════════════ */
+/**
+ * Convierte un JSON (de un solo equipo o de múltiples) en un
+ * diccionario { NombreHoja: [filas] } donde cada fila lleva
+ * el campo clave (ej: ComputerName) propagado desde el padre.
+ *
+ * Soporta tres formas:
+ *  A) Objeto único con keyField + sub-arrays:
+ *     {"ComputerName":"PC-01","Disks":[...],"GPU":[...]}
+ *     → hojas Disks, GPU con ComputerName en cada fila
+ *
+ *  B) Array de objetos del tipo A:
+ *     [{"ComputerName":"PC-01",...}, {"ComputerName":"PC-02",...}]
+ *
+ *  C) Objeto cuyos valores son arrays homogéneos (sin keyField propio):
+ *     {"Equipos":[...],"GPU":[...],"Red":[...]}
+ */
+function detectarSeccionesMultiHoja(json, keyFieldHint, filename) {
+  const baseName = filename.replace(/\.json$/i,'');
+
+  // ── CASO B: array en raíz ──────────────────────────────────
+  if(Array.isArray(json)) {
+    if(json.length===0) return {};
+    const first = json[0];
+
+    // ¿Es array de objetos con sub-arrays? → cada elemento es un equipo
+    if(typeof first==='object' && first!==null && !Array.isArray(first)) {
+      const kf = detectarKeyField(first, keyFieldHint);
+      const haySubArrays = Object.values(first).some(v=>Array.isArray(v));
+
+      if(haySubArrays && kf) {
+        // B1: array de equipos con sub-secciones
+        const resultado = {};
+        json.forEach(equipo => {
+          const secciones = descomponerEquipo(equipo, kf);
+          for(const [hoja,filas] of Object.entries(secciones)) {
+            if(!resultado[hoja]) resultado[hoja]=[];
+            resultado[hoja].push(...filas);
+          }
+        });
+        return resultado;
+      }
+
+      // B2: array plano de objetos homogéneos
+      return { [baseName]: json };
+    }
+
+    // B3: array de primitivos
+    return { [baseName]: json.map(v=>({valor:v})) };
+  }
+
+  // ── CASO A: objeto único ───────────────────────────────────
+  if(typeof json==='object' && json!==null) {
+    const kf = detectarKeyField(json, keyFieldHint);
+    const haySubArrays = Object.values(json).some(v=>Array.isArray(v));
+
+    if(haySubArrays && kf) {
+      // A1: objeto de un equipo con sub-secciones
+      return descomponerEquipo(json, kf);
+    }
+
+    if(haySubArrays && !kf) {
+      // A2: objeto cuyas propiedades son arrays (sin keyField claro)
+      //     ej: {"Equipos":[...],"GPU":[...],"Red":[...]}
+      const resultado = {};
+      for(const [k,v] of Object.entries(json)) {
+        if(Array.isArray(v)) {
+          resultado[k] = v.map(item =>
+            (typeof item==='object'&&item!==null&&!Array.isArray(item)) ? item : {valor:item}
+          );
+        }
+      }
+      const simples = Object.entries(json).filter(([,v])=>!Array.isArray(v)&&(typeof v!=='object'||v===null));
+      if(simples.length) resultado['Info']=[Object.fromEntries(simples)];
+      return resultado;
+    }
+
+    // A3: objeto plano = una fila
+    return { [baseName]: [json] };
+  }
+
+  return { [baseName]: [{valor:json}] };
+}
+
+/**
+ * Dado un objeto-equipo, lo descompone en hojas.
+ * El keyField y los campos escalares del nivel raíz se propagan
+ * como contexto a todas las filas de los sub-arrays.
+ */
+function descomponerEquipo(obj, kf) {
+  const resultado = {};
+
+  // Campos raíz escalares (se propagarán a sub-hojas)
+  const raizEscalar = {};
+  const raizArrays  = {};
+
+  for(const [k,v] of Object.entries(obj)) {
+    if(Array.isArray(v)) raizArrays[k]  = v;
+    else                  raizEscalar[k] = v;
+  }
+
+  // Hoja Info: todos los campos escalares del equipo
+  // (sólo la añadimos si hay sub-arrays; si no hay sub-arrays no tiene sentido separar)
+  const tieneSubArrays = Object.keys(raizArrays).length > 0;
+
+  if(tieneSubArrays) {
+    if(!resultado['Info']) resultado['Info']=[];
+    resultado['Info'].push({...raizEscalar});
+  }
+
+  // Sub-hojas: cada array es una hoja; cada fila recibe los campos raíz como prefijo
+  for(const [hoja, arr] of Object.entries(raizArrays)) {
+    if(!resultado[hoja]) resultado[hoja]=[];
+    arr.forEach(item => {
+      let fila;
+      if(typeof item==='object' && item!==null && !Array.isArray(item)) {
+        // Poner keyField primero, luego el resto del contexto raíz, luego los campos del item
+        fila = {};
+        if(kf && raizEscalar[kf]!==undefined) fila[kf] = raizEscalar[kf];
+        // Otros campos escalares raíz opcionales (no duplicar kf)
+        // Solo propagamos kf para mantener limpieza (igual al archivo de referencia)
+        Object.assign(fila, item);
+      } else {
+        // Item es un primitivo (ej: GPU es un array de strings)
+        fila = {};
+        if(kf && raizEscalar[kf]!==undefined) fila[kf] = raizEscalar[kf];
+        fila[hoja] = item; // columna con el nombre de la hoja
+      }
+      resultado[hoja].push(fila);
+    });
+  }
+
+  // Si no hay sub-arrays, devolver como fila única
+  if(!tieneSubArrays) {
+    resultado[kf ? String(raizEscalar[kf]||'Datos') : 'Datos'] = [{...obj}];
+  }
+
+  return resultado;
+}
+
+/**
+ * Detecta el campo clave (ej: ComputerName) en un objeto.
+ * Prioriza: hint del usuario > campos con "name"/"id"/"hostname"/"computer" > primer string corto único.
+ */
+function detectarKeyField(obj, hint) {
+  if(!obj||typeof obj!=='object') return null;
+  const keys = Object.keys(obj);
+
+  // Si el usuario especificó un hint y existe
+  if(hint && keys.includes(hint)) return hint;
+
+  // Buscar por nombre sugerido
+  const candidatos = ['ComputerName','computerName','computer_name','hostname','Hostname',
+                       'HostName','name','Name','id','Id','ID','device','Device'];
+  for(const c of candidatos) { if(keys.includes(c)) return c; }
+
+  // Primer campo string no-array con valor corto
+  for(const k of keys) {
+    if(typeof obj[k]==='string' && obj[k].length<60) return k;
+  }
+  return null;
+}
+
+/* ═══════════════════════════════════════════════════════
+   HELPERS
+═══════════════════════════════════════════════════════ */
+function extraerRegistrosPlanos(json) {
+  if(Array.isArray(json)) return json.map(item=>typeof item==='object'&&item!==null&&!Array.isArray(item)?item:{valor:item});
+  if(typeof json==='object'&&json!==null){
+    for(const k of Object.keys(json)) if(Array.isArray(json[k])) return extraerRegistrosPlanos(json[k]);
+    return [json];
+  }
+  return [{valor:json}];
+}
+
+function aplanar(obj, pre='', acc={}) {
+  if(obj===null||obj===undefined){acc[pre||'valor']=obj;return acc;}
+  if(typeof obj!=='object'||obj instanceof Date){acc[pre]=obj;return acc;}
+  if(Array.isArray(obj)){acc[pre]=JSON.stringify(obj);return acc;}
+  for(const[k,v] of Object.entries(obj)){
+    const c=pre?`${pre}.${k}`:k;
+    if(v!==null&&typeof v==='object'&&!Array.isArray(v)) aplanar(v,c,acc);
+    else if(Array.isArray(v)) acc[c]=JSON.stringify(v);
+    else acc[c]=v;
+  }
+  return acc;
+}
+
+function colsDeHoja(hoja) {
+  const m=new Map();
+  (S.hojas[hoja]||[]).forEach(r=>Object.keys(r).forEach(k=>{if(!m.has(k))m.set(k,true);}));
+  return [...m.keys()];
+}
+
+// Campo clave para resaltar en la tabla (ComputerName, id, etc.)
+function getKeyCol(cols) {
+  const priors=['ComputerName','computerName','computer_name','hostname','HostName','name','Name','id','Id'];
+  return priors.find(p=>cols.includes(p)) || cols[0] || null;
+}
+
+function leerArchivo(f) {
+  return new Promise((res,rej)=>{
+    const r=new FileReader();
+    r.onload=e=>res(e.target.result);
+    r.onerror=()=>rej(new Error('No se pudo leer el archivo'));
+    r.readAsText(f,'utf-8');
+  });
+}
+
+/* ═══════════════════════════════════════════════════════
+   VISTA PREVIA
+═══════════════════════════════════════════════════════ */
+function renderSheetTabs() {
+  document.getElementById('sheet-tabs').innerHTML = S.hojasOrder.map(h=>
+    `<button class="stab${h===S.activeSheet?' active':''}" onclick="cambiarHoja('${h.replace(/'/g,'\\\'')}')">${h} <span style="opacity:.6">(${S.hojas[h].length})</span></button>`
+  ).join('');
+}
+
+function cambiarHoja(h) {
+  S.activeSheet=h;
+  document.getElementById('search-input').value='';
+  renderSheetTabs(); renderTabla();
+}
+
+function renderTabla() {
+  if(!S.activeSheet) return;
+  const cols = colsDeHoja(S.activeSheet);
+  const filas = (S.hojas[S.activeSheet]||[]).slice(0,100);
+  document.getElementById('col-label').textContent=`${cols.length} columnas`;
+  _pintarTabla(filas, cols);
+  document.getElementById('prev-footer').textContent=
+    `Mostrando ${Math.min(100,S.hojas[S.activeSheet].length)} de ${S.hojas[S.activeSheet].length} registros · Hoja: ${S.activeSheet}`;
+}
+
+function filtrarTabla() {
+  if(!S.activeSheet) return;
+  const q=document.getElementById('search-input').value.toLowerCase().trim();
+  const cols=colsDeHoja(S.activeSheet);
+  const filas=q
+    ? (S.hojas[S.activeSheet]||[]).filter(r=>cols.some(c=>String(r[c]??'').toLowerCase().includes(q))).slice(0,100)
+    : (S.hojas[S.activeSheet]||[]).slice(0,100);
+  _pintarTabla(filas,cols);
+  document.getElementById('prev-footer').textContent=
+    `Mostrando ${filas.length} resultado(s) de ${S.hojas[S.activeSheet].length} registros`;
+}
+
+function _pintarTabla(filas, cols) {
+  const head=document.getElementById('tbl-head');
+  const body=document.getElementById('tbl-body');
+  if(!cols.length||!filas.length){
+    head.innerHTML='';body.innerHTML='<tr><td colspan="99" class="no-data">Sin datos</td></tr>';return;
+  }
+  const vis=cols.slice(0,40);
+  const kc=getKeyCol(vis);
+  head.innerHTML='<tr><th class="rn">#</th>'+
+    vis.map(c=>`<th class="${c===kc?'key-col':''}" title="${c}">${c}</th>`).join('')+
+    (cols.length>40?`<th style="color:var(--yellow)">+${cols.length-40} más…</th>`:'')+
+    '</tr>';
+  body.innerHTML=filas.map((row,i)=>'<tr><td class="rn">'+(i+1)+'</td>'+
+    vis.map(c=>{
+      const v=row[c];
+      if(v===null||v===undefined) return '<td class="null-v">—</td>';
+      const s=String(v);
+      return `<td class="${c===kc?'key-cell':''}" title="${s.replace(/"/g,'&quot;')}">${s.slice(0,120)}</td>`;
+    }).join('')+'</tr>').join('');
+}
+
+function renderSheetSummary() {
+  document.getElementById('sheet-summary').innerHTML=
+    '<div style="font-size:.82rem;color:var(--muted);margin-bottom:.5rem">Hojas que se generarán:</div>'+
+    '<div class="sheet-pills">'+
+    S.hojasOrder.map(h=>`<span class="pill g">📋 ${h} <span style="opacity:.7">(${S.hojas[h].length} filas · ${colsDeHoja(h).length} cols)</span></span>`).join('')+
+    '</div>';
+}
+
+/* ═══════════════════════════════════════════════════════
+   EXPORTACIÓN EXCEL
+═══════════════════════════════════════════════════════ */
+function exportarExcel() {
+  if(!S.hojasOrder.length){ alerta('exp-alert','ae','❌ No hay datos. Procesa archivos primero.'); return; }
+  try {
+    const nombre = document.getElementById('exp-name').value.trim()||'inventario_unificado';
+    const wb = XLSX.utils.book_new();
+
+    S.hojasOrder.forEach(hoja=>{
+      const cols  = colsDeHoja(hoja);
+      const filas = S.hojas[hoja];
+      const kc    = getKeyCol(cols);
+
+      // Poner columna clave al frente
+      const colsOrdenadas = kc ? [kc, ...cols.filter(c=>c!==kc)] : cols;
+
+      const aoa = [colsOrdenadas];
+      filas.forEach(r=>aoa.push(colsOrdenadas.map(c=>{
+        const v=r[c]; return (v===null||v===undefined)?'':v;
+      })));
+
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+      // Anchos automáticos
+      ws['!cols'] = colsOrdenadas.map((c,ci)=>{
+        const max=Math.max(c.length,...aoa.slice(1,51).map(row=>String(row[ci]??'').length));
+        return {wch:Math.min(Math.max(max+2,8),60)};
+      });
+
+      // Autofilter
+      if(colsOrdenadas.length>0)
+        ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:0,c:colsOrdenadas.length-1}})};
+
+      XLSX.utils.book_append_sheet(wb, ws, hoja.replace(/[\\\/\*\?\[\]:]/g,'_').slice(0,31));
+    });
+
+    // Hoja Resumen
+    const resumen=[
+      ['JSON Unifier → Excel',''],
+      ['Generado', new Date().toLocaleString('es-CO')],
+      ['Archivos procesados', S.archivos.filter(a=>a.status==='ok').length],
+      ['',''],
+      ['Hoja','Registros','Columnas'],
+      ...S.hojasOrder.map(h=>[h, S.hojas[h].length, colsDeHoja(h).length]),
+      ['',''],
+      ['TOTAL', S.hojasOrder.reduce((s,h)=>s+S.hojas[h].length,0),''],
+    ];
+    const wsR=XLSX.utils.aoa_to_sheet(resumen);
+    wsR['!cols']=[{wch:30},{wch:15},{wch:10}];
+    XLSX.utils.book_append_sheet(wb,wsR,'Resumen');
+
+    XLSX.writeFile(wb,`${nombre}.xlsx`);
+    alerta('exp-alert','ag',
+      `✅ "${nombre}.xlsx" descargado · ${S.hojasOrder.length} hojas · ${S.hojasOrder.reduce((s,h)=>s+S.hojas[h].length,0)} registros`);
+  } catch(err) {
+    alerta('exp-alert','ae',`❌ Error: ${err.message}`);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   UTILS
+═══════════════════════════════════════════════════════ */
+function limpiarTodo() {
+  S.archivos=[];S.hojas={};S.hojasOrder=[];S.activeSheet=null;
+  renderFiles();
+  ['st-files','st-records','st-dupes','st-export','st-sheets'].forEach(id=>setStat(id,0));
+  setStat('st-time','—');
+  document.getElementById('preview-section').classList.add('hidden');
+  document.getElementById('export-section').classList.add('hidden');
+  document.getElementById('file-alert').innerHTML='';
+  document.getElementById('exp-alert').innerHTML='';
+  document.getElementById('btn-process').disabled=true;
+}
+function setProgress(p,m){document.getElementById('prog-bar').style.width=p+'%';document.getElementById('prog-txt').textContent=m;}
+function setStat(id,v){document.getElementById(id).textContent=v;}
+function alerta(cid,cls,msg){document.getElementById(cid).innerHTML=`<div class="alert ${cls}">${msg}</div>`;}
+function fmtBytes(b){if(b<1024)return b+' B';if(b<1048576)return(b/1024).toFixed(1)+' KB';return(b/1048576).toFixed(1)+' MB';}
+
+setMode('sheets');
+</script>
+</body>
+</html>
